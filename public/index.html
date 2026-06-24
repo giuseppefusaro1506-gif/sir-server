@@ -1,0 +1,1490 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>K.A.R.I. — Kernel Archivistico Ricerche Investigative</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+/* ============================================================
+   DESIGN TOKENS
+   ============================================================ */
+:root {
+  --color-background:      #06080a;
+  --color-surface:         #0b0e11;
+  --color-surface-raised:  #101418;
+  --color-border:          #18222e;
+  --color-border-dim:      #0d1520;
+  --color-green:           #00e87a;
+  --color-green-dim:       #001a0d;
+  --color-amber:           #ffaa00;
+  --color-amber-dim:       #1a1000;
+  --color-red:             #ff2244;
+  --color-red-dim:         #1a0008;
+  --color-blue:            #3399ff;
+  --color-purple:          #9966ff;
+  --color-text:            #b8ccd8;
+  --color-text-secondary:  #3a5468;
+  --color-text-muted:      #162030;
+  --font-mono:             'Courier New', Courier, monospace;
+  --font-ui:               'Segoe UI', system-ui, sans-serif;
+}
+
+/* ============================================================
+   RESET
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; background: var(--color-background); color: var(--color-text); font-family: var(--font-mono); overflow: hidden; }
+::selection { background: var(--color-green-dim); color: var(--color-green); }
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-border); }
+
+/* ============================================================
+   EFFETTO SCANLINE AMBIENTALE
+   ============================================================ */
+.scanline-effect {
+  position: fixed; top: 0; left: 0; right: 0; height: 2px;
+  background: rgba(0, 232, 122, 0.08);
+  animation: scanline-sweep 5s linear infinite;
+  pointer-events: none; z-index: 1;
+}
+@keyframes scanline-sweep { from { top: 0; } to { top: 100vh; } }
+
+/* ============================================================
+   SCHERMATA DI LOGIN
+   ============================================================ */
+#login-screen {
+  position: fixed; inset: 0; background: var(--color-background);
+  display: flex; align-items: center; justify-content: center; z-index: 9999;
+}
+.login-box {
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  padding: 44px 48px; width: 380px; text-align: center; position: relative; overflow: hidden;
+}
+.login-box::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, transparent, var(--color-green), transparent);
+}
+.login-scanline {
+  position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: rgba(0, 232, 122, 0.2); animation: scanline-sweep 3s linear infinite; pointer-events: none;
+}
+.login-logo {
+  font-size: 13px; letter-spacing: 8px; color: var(--color-green); margin-bottom: 3px; font-weight: bold;
+}
+.login-subtitle {
+  font-size: 8px; letter-spacing: 3px; color: var(--color-text-muted); margin-bottom: 4px;
+}
+.login-caso {
+  font-size: 9px; letter-spacing: 2px; color: var(--color-amber);
+  margin-bottom: 24px; border: 1px solid var(--color-amber-dim); padding: 4px 12px; display: inline-block;
+}
+.login-heading {
+  font-size: 15px; font-family: var(--font-ui); font-weight: 300; color: var(--color-text); margin-bottom: 22px;
+}
+.login-field {
+  width: 100%; background: var(--color-background); border: 1px solid var(--color-border);
+  color: var(--color-text); font-family: var(--font-mono); font-size: 12px;
+  padding: 10px 14px; text-align: center; letter-spacing: 2px; outline: none;
+  margin-bottom: 8px; transition: border-color 0.12s;
+}
+.login-field:focus { border-color: var(--color-green); }
+.login-field::placeholder { color: var(--color-text-muted); letter-spacing: 1px; }
+.login-button {
+  width: 100%; background: none; border: 1px solid var(--color-green); color: var(--color-green);
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 3px; padding: 10px;
+  cursor: pointer; text-transform: uppercase; transition: background 0.12s; margin-bottom: 8px;
+}
+.login-button:hover { background: var(--color-green-dim); }
+.login-error {
+  font-size: 9px; color: var(--color-red); letter-spacing: 2px; min-height: 14px; margin-top: 4px;
+}
+.login-hint {
+  font-size: 8px; color: var(--color-text-muted); margin-top: 14px;
+  line-height: 1.8; border-top: 1px solid var(--color-border); padding-top: 12px;
+}
+
+/* ============================================================
+   LAYOUT PRINCIPALE
+   ============================================================ */
+#app {
+  display: grid;
+  grid-template-rows: 44px 1fr 38px;
+  grid-template-columns: 230px 1fr;
+  grid-template-areas: "header header" "sidebar main" "footer footer";
+  height: 100vh;
+}
+
+/* ============================================================
+   HEADER
+   ============================================================ */
+#header {
+  grid-area: header; display: flex; align-items: center; justify-content: space-between;
+  padding: 0 20px; border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface); z-index: 10; position: relative;
+}
+#header::after {
+  content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--color-green-dim), transparent);
+}
+.header-left   { display: flex; align-items: center; gap: 16px; }
+.header-brand  { font-size: 13px; letter-spacing: 6px; color: var(--color-green); font-weight: bold; }
+.header-caso   { font-size: 8px; letter-spacing: 2px; color: var(--color-amber); border: 1px solid var(--color-amber-dim); padding: 2px 8px; }
+.header-right  { display: flex; align-items: center; gap: 14px; }
+.header-squad  { font-size: 9px; color: var(--color-amber); letter-spacing: 2px; }
+.header-cl     { font-size: 9px; letter-spacing: 2px; color: var(--color-text-secondary); }
+.header-cl span { color: var(--color-green); font-size: 11px; }
+.header-clock  { font-size: 9px; color: var(--color-text-muted); letter-spacing: 2px; }
+.live-dot {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--color-red);
+  animation: blink-live 1.4s infinite; display: inline-block; margin-right: 5px;
+}
+@keyframes blink-live { 0%, 100% { opacity: 1; } 50% { opacity: 0.15; } }
+
+/* ============================================================
+   SIDEBAR
+   ============================================================ */
+#sidebar {
+  grid-area: sidebar; border-right: 1px solid var(--color-border); background: var(--color-surface);
+  overflow-y: auto; padding: 10px 0; display: flex; flex-direction: column;
+}
+.sidebar-section { margin-bottom: 16px; }
+.sidebar-section-label {
+  font-size: 7px; letter-spacing: 3px; color: var(--color-text-muted);
+  text-transform: uppercase; padding: 0 14px; margin-bottom: 4px;
+}
+.nav-item {
+  display: flex; align-items: center; gap: 8px; padding: 6px 14px;
+  font-size: 10px; color: var(--color-text-secondary); cursor: pointer;
+  transition: all 0.12s; border-left: 2px solid transparent; letter-spacing: 0.3px;
+}
+.nav-item:hover { background: var(--color-border-dim); color: var(--color-text); }
+.nav-item.active { color: var(--color-green); border-left-color: var(--color-green); background: var(--color-green-dim); }
+.nav-item.locked { color: var(--color-text-muted); cursor: not-allowed; opacity: 0.35; }
+.nav-item.locked:hover { background: none; color: var(--color-text-muted); }
+.nav-item-icon  { font-size: 10px; width: 13px; text-align: center; flex-shrink: 0; }
+.nav-item-badge { margin-left: auto; font-size: 7px; background: var(--color-border); color: var(--color-text-muted); padding: 1px 5px; letter-spacing: 1px; }
+.nav-item-badge.new   { background: var(--color-green-dim); color: var(--color-green); }
+.nav-item-badge.alert { background: var(--color-red-dim); color: var(--color-red); animation: blink-live 1s infinite; }
+
+/* Barra progresso clearance */
+#clearance-progress { padding: 12px 14px; margin-top: auto; border-top: 1px solid var(--color-border); }
+.clearance-progress-label { font-size: 7px; letter-spacing: 2px; color: var(--color-text-muted); text-transform: uppercase; margin-bottom: 8px; }
+.clearance-step { display: flex; align-items: center; gap: 8px; font-size: 9px; color: var(--color-text-muted); margin-bottom: 3px; }
+.clearance-step.completed { color: var(--color-green); }
+.clearance-step.current   { color: var(--color-amber); }
+.clearance-step-dot { width: 6px; height: 6px; border-radius: 50%; border: 1px solid currentColor; flex-shrink: 0; }
+.clearance-step.completed .clearance-step-dot { background: var(--color-green); border-color: var(--color-green); }
+.clearance-step.current   .clearance-step-dot { background: var(--color-amber); border-color: var(--color-amber); }
+
+/* ============================================================
+   MAIN
+   ============================================================ */
+#main { grid-area: main; overflow-y: auto; padding: 22px 26px; }
+.panel { display: none; animation: panel-appear 0.18s ease; }
+.panel.active { display: block; }
+@keyframes panel-appear { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+
+/* ============================================================
+   FOOTER / BARRA COMANDI
+   ============================================================ */
+#footer {
+  grid-area: footer; display: flex; align-items: center; gap: 10px;
+  padding: 0 16px; border-top: 1px solid var(--color-border); background: var(--color-surface);
+}
+#footer-prompt { font-size: 11px; color: var(--color-green); white-space: nowrap; }
+#footer-input {
+  flex: 1; background: none; border: none; outline: none;
+  color: var(--color-text); font-family: var(--font-mono); font-size: 11px; caret-color: var(--color-green);
+}
+#footer-input::placeholder { color: var(--color-text-muted); }
+#footer-status { font-size: 9px; color: var(--color-text-muted); letter-spacing: 1px; white-space: nowrap; }
+
+/* ============================================================
+   OVERLAY SBLOCCO CLEARANCE
+   ============================================================ */
+#clearance-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.92);
+  z-index: 800; align-items: center; justify-content: center; backdrop-filter: blur(6px);
+}
+#clearance-overlay.visible { display: flex; }
+.clearance-unlock-box {
+  background: var(--color-surface); border: 1px solid var(--color-green);
+  padding: 44px 52px; text-align: center; max-width: 440px;
+  animation: unlock-appear 0.3s ease; position: relative; overflow: hidden;
+}
+.clearance-unlock-box::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, transparent, var(--color-green), transparent);
+}
+@keyframes unlock-appear { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: none; } }
+.unlock-badge  { font-size: 8px; letter-spacing: 5px; color: var(--color-green); margin-bottom: 8px; }
+.unlock-caso   { font-size: 9px; letter-spacing: 2px; color: var(--color-amber); margin-bottom: 12px; }
+.unlock-title  { font-size: 26px; font-family: var(--font-ui); font-weight: 200; color: #fff; margin-bottom: 14px; border-bottom: 1px solid var(--color-border); padding-bottom: 14px; }
+.unlock-description { font-size: 11px; color: var(--color-text-secondary); margin-bottom: 12px; }
+#unlock-features { font-size: 10px; color: var(--color-green); line-height: 2; margin-bottom: 20px; }
+.unlock-close-button {
+  background: none; border: 1px solid var(--color-green); color: var(--color-green);
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 3px; padding: 9px 24px; cursor: pointer; text-transform: uppercase;
+}
+.unlock-close-button:hover { background: var(--color-green-dim); }
+
+/* ============================================================
+   MESSAGGIO ORGANIZZATORI
+   ============================================================ */
+#admin-message {
+  display: none; position: fixed; top: 52px; left: 50%; transform: translateX(-50%);
+  z-index: 1000; background: var(--color-surface); border: 2px solid var(--color-amber);
+  padding: 16px 28px; text-align: center; max-width: 440px; animation: panel-appear 0.2s ease;
+}
+.admin-message-label { font-size: 8px; letter-spacing: 3px; color: var(--color-amber); margin-bottom: 6px; }
+.admin-message-text  { font-size: 12px; color: var(--color-text); }
+.admin-message-close { font-size: 9px; color: var(--color-text-muted); cursor: pointer; margin-top: 10px; letter-spacing: 2px; }
+.admin-message-close:hover { color: var(--color-green); }
+
+/* ============================================================
+   SISTEMA NOTIFICHE
+   ============================================================ */
+#notification-bar {
+  position: fixed; top: 52px; right: 16px; z-index: 900;
+  display: flex; flex-direction: column; gap: 6px; pointer-events: none;
+}
+.notification {
+  background: var(--color-surface-raised); border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-green); padding: 8px 12px; font-size: 10px;
+  color: var(--color-text); max-width: 300px; line-height: 1.5;
+  animation: notif-appear 0.2s ease; pointer-events: all;
+}
+.notification-type { font-size: 8px; letter-spacing: 2px; color: var(--color-green); margin-bottom: 2px; }
+.notification.warning { border-left-color: var(--color-amber); }
+.notification.warning .notification-type { color: var(--color-amber); }
+.notification.error   { border-left-color: var(--color-red); }
+.notification.error   .notification-type { color: var(--color-red); }
+.notification.system  { border-left-color: var(--color-blue); }
+.notification.system  .notification-type { color: var(--color-blue); }
+@keyframes notif-appear { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
+
+/* ============================================================
+   COMPONENTI COMUNI
+   ============================================================ */
+.page-category { font-size: 8px; letter-spacing: 4px; text-transform: uppercase; color: var(--color-text-secondary); margin-bottom: 2px; }
+.page-title    { font-size: 20px; color: var(--color-text); font-family: var(--font-ui); font-weight: 300; margin-bottom: 18px; letter-spacing: -0.5px; }
+
+.info-box { border: 1px solid var(--color-border); padding: 10px 14px; margin-bottom: 12px; font-size: 11px; line-height: 1.7; color: var(--color-text-secondary); }
+.info-box.amber  { border-color: var(--color-amber); color: var(--color-amber); background: var(--color-amber-dim); }
+.info-box.red    { border-color: var(--color-red);   color: var(--color-red);   background: var(--color-red-dim); }
+.info-box.green  { border-color: var(--color-green); color: var(--color-green); background: var(--color-green-dim); }
+.info-box.purple { border-color: var(--color-purple); color: var(--color-purple); background: rgba(153,102,255,.05); }
+
+.search-bar { display: flex; gap: 8px; margin-bottom: 12px; }
+.search-input {
+  flex: 1; background: var(--color-surface-raised); border: 1px solid var(--color-border);
+  color: var(--color-text); font-family: var(--font-mono); font-size: 11px; padding: 7px 11px; outline: none; transition: border-color 0.12s;
+}
+.search-input:focus { border-color: var(--color-green); }
+.search-input::placeholder { color: var(--color-text-muted); }
+
+.action-button {
+  background: none; border: 1px solid var(--color-border); color: var(--color-text-secondary);
+  font-family: var(--font-mono); font-size: 9px; letter-spacing: 2px; padding: 6px 12px; cursor: pointer; transition: all 0.12s; text-transform: uppercase;
+}
+.action-button:hover      { border-color: var(--color-green); color: var(--color-green); }
+.action-button.primary    { border-color: var(--color-green); color: var(--color-green); }
+.action-button.destructive { border-color: var(--color-red);  color: var(--color-red); }
+
+.filter-row  { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 12px; }
+.filter-chip {
+  font-size: 8px; letter-spacing: 1px; padding: 3px 8px;
+  border: 1px solid var(--color-border); color: var(--color-text-secondary);
+  cursor: pointer; transition: all 0.12s; text-transform: uppercase;
+}
+.filter-chip:hover, .filter-chip.active { border-color: var(--color-amber); color: var(--color-amber); }
+
+.data-table  { width: 100%; border-collapse: collapse; font-size: 10px; }
+.data-table th {
+  text-align: left; font-size: 7px; letter-spacing: 2px; text-transform: uppercase;
+  color: var(--color-text-muted); padding: 5px 8px; border-bottom: 1px solid var(--color-border);
+}
+.data-table td { padding: 6px 8px; border-bottom: 1px solid var(--color-border-dim); vertical-align: top; }
+.data-table tr:hover td { background: var(--color-border-dim); }
+.data-table tr.clickable { cursor: pointer; }
+
+.cell-id   { color: var(--color-text-muted); font-size: 9px; }
+.cell-name { color: var(--color-text); }
+.cell-tag  { display: inline-block; font-size: 7px; padding: 1px 5px; border: 1px solid var(--color-border); color: var(--color-text-muted); letter-spacing: 1px; text-transform: uppercase; }
+.cell-tag.key      { border-color: var(--color-green);  color: var(--color-green); }
+.cell-tag.witness  { border-color: var(--color-amber);  color: var(--color-amber); }
+.cell-tag.suspect  { border-color: var(--color-red);    color: var(--color-red); }
+.cell-tag.historic { border-color: var(--color-purple); color: var(--color-purple); }
+
+.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.card { background: var(--color-surface-raised); border: 1px solid var(--color-border); padding: 12px; transition: border-color 0.12s; }
+.card:hover { border-color: var(--color-text-secondary); }
+.card-label { font-size: 7px; letter-spacing: 2px; text-transform: uppercase; color: var(--color-text-muted); margin-bottom: 4px; }
+.card-value { font-size: 18px; color: var(--color-text); font-family: var(--font-ui); }
+.card-sub   { font-size: 10px; color: var(--color-text-secondary); margin-top: 3px; }
+
+.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--color-border); border: 1px solid var(--color-border); margin-bottom: 16px; }
+.detail-cell { background: var(--color-surface-raised); padding: 8px 12px; }
+.detail-label { font-size: 7px; letter-spacing: 2px; text-transform: uppercase; color: var(--color-text-muted); margin-bottom: 2px; }
+.detail-value { font-size: 11px; color: var(--color-text); }
+
+.timeline-entry { display: grid; grid-template-columns: 140px 1fr; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--color-border-dim); font-size: 10px; }
+.timeline-date { color: var(--color-text-muted); }
+.timeline-text { color: var(--color-text); line-height: 1.6; }
+
+/* Documento carta */
+.document-paper {
+  background: #f4efe5; color: #1a1208; padding: 28px 32px; font-family: 'Courier New', monospace;
+  font-size: 11px; line-height: 1.9; border: 1px solid #c8b89a; max-width: 640px;
+  box-shadow: 4px 4px 24px rgba(0,0,0,.5); margin: 0 auto 18px; position: relative;
+}
+.document-paper::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: repeating-linear-gradient(90deg, #8b7355 0, #8b7355 6px, transparent 6px, transparent 12px);
+}
+.document-header   { text-align: center; margin-bottom: 16px; border-bottom: 1px solid #8b7355; padding-bottom: 10px; }
+.document-stamp    { font-size: 8px; letter-spacing: 3px; text-transform: uppercase; color: #5a3e1b; opacity: 0.8; }
+.document-title    { font-size: 13px; font-weight: bold; color: #1a0808; margin: 5px 0; }
+.document-meta     { font-size: 9px; color: #8b7355; }
+.document-body     { white-space: pre-wrap; }
+.document-signature { margin-top: 18px; text-align: right; font-style: italic; color: #5a3e1b; }
+.document-classification {
+  position: absolute; top: 12px; right: 12px; border: 2px solid #b31d28; color: #b31d28;
+  font-size: 7px; letter-spacing: 3px; padding: 2px 8px; transform: rotate(3deg); opacity: 0.9;
+}
+.document-classification.top-secret { border-color: #7b0000; color: #7b0000; font-size: 8px; font-weight: bold; }
+.document-archive-note { margin-top: 12px; border-top: 1px solid #c8b89a; padding-top: 8px; font-size: 9px; color: #8b7355; font-style: italic; }
+
+/* Grafo */
+#graph-container { background: var(--color-surface-raised); border: 1px solid var(--color-border); height: 380px; overflow: hidden; margin-bottom: 12px; }
+#graph-svg { width: 100%; height: 100%; }
+.graph-node-label { font-family: var(--font-mono); font-size: 9px; pointer-events: none; }
+.graph-node-sublabel { font-family: var(--font-mono); font-size: 7px; pointer-events: none; fill: #3a5468; }
+#graph-detail { background: var(--color-surface-raised); border: 1px solid var(--color-border); padding: 14px; display: none; }
+#graph-detail-name { font-size: 14px; font-family: var(--font-ui); font-weight: 300; color: var(--color-text); margin-bottom: 6px; }
+
+/* Audio player */
+.audio-player-row { background: var(--color-surface-raised); border: 1px solid var(--color-border); padding: 12px 14px; display: flex; align-items: center; gap: 12px; }
+.audio-play-button { font-size: 16px; cursor: pointer; color: var(--color-green); }
+.audio-meta { flex: 1; }
+.audio-title    { font-size: 11px; color: var(--color-text); }
+.audio-duration { font-size: 9px; color: var(--color-text-muted); margin-top: 2px; }
+.audio-progress-track { flex: 1; height: 3px; background: var(--color-border); cursor: pointer; }
+.audio-progress-fill  { height: 100%; background: var(--color-green); width: 0%; transition: width 0.1s; }
+
+/* Mappa Leaflet */
+#map-leaflet { width: 100%; height: 360px; border: 1px solid var(--color-border); background: #060a0e; }
+#map-leaflet .leaflet-tile { filter: brightness(0.28) saturate(0.3) hue-rotate(185deg); }
+.leaflet-popup-content-wrapper {
+  background: #0b0e11 !important; border: 1px solid #18222e !important; border-radius: 0 !important;
+  box-shadow: 0 4px 24px rgba(0,0,0,.7) !important;
+  color: #b8ccd8 !important; font-family: 'Courier New', monospace !important; font-size: 11px !important;
+}
+.leaflet-popup-tip { background: #18222e !important; }
+.leaflet-popup-close-button { color: #3a5468 !important; }
+.leaflet-popup-close-button:hover { color: #00e87a !important; }
+.map-popup-id    { font-size: 7px; letter-spacing: 2px; color: #3a5468; margin-bottom: 3px; text-transform: uppercase; }
+.map-popup-title { font-size: 12px; color: var(--color-green); letter-spacing: 1px; margin-bottom: 5px; }
+.map-popup-cl    { font-size: 8px; color: var(--color-amber); margin-top: 4px; letter-spacing: 1px; }
+.map-popup-desc  { font-size: 10px; color: #7a9fb0; line-height: 1.6; margin-top: 6px; }
+.leaflet-control-zoom a { background: #0b0e11 !important; border-color: #18222e !important; color: #3a5468 !important; }
+.leaflet-control-zoom a:hover { background: #101418 !important; color: #00e87a !important; }
+.leaflet-control-attribution { background: rgba(6,8,10,.8) !important; color: #162030 !important; font-size: 7px !important; }
+.leaflet-control-attribution a { color: #2a3a4a !important; }
+
+/* Schermata finale */
+#finale-screen {
+  display: none; position: fixed; inset: 0; background: #000;
+  z-index: 2000; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 40px;
+}
+#finale-screen.visible { display: flex; }
+.finale-badge { border: 2px solid var(--color-green); color: var(--color-green); font-size: 8px; letter-spacing: 6px; padding: 5px 18px; margin-bottom: 24px; }
+.finale-caso  { font-size: 10px; letter-spacing: 3px; color: var(--color-amber); margin-bottom: 8px; }
+.finale-title { font-size: 32px; font-family: var(--font-ui); font-weight: 200; color: #fff; margin-bottom: 10px; }
+.finale-subject { font-size: 16px; color: var(--color-amber); letter-spacing: 3px; margin-bottom: 28px; }
+#finale-text   { font-size: 11px; color: var(--color-text-secondary); line-height: 2.1; max-width: 560px; min-height: 100px; }
+</style>
+</head>
+<body>
+
+<div class="scanline-effect"></div>
+<div id="notification-bar"></div>
+
+<!-- SCHERMATA DI LOGIN -->
+<div id="login-screen">
+  <div class="login-scanline"></div>
+  <div class="login-box">
+    <div class="login-logo">K . A . R . I .</div>
+    <div class="login-subtitle">Kernel Archivistico Ricerche Investigative</div>
+    <div class="login-caso">CASO 27/2026 — OPERAZIONE ANELLO</div>
+    <div class="login-heading">Identificazione squadra</div>
+    <input class="login-field" id="login-squad-name" type="text" placeholder="Denominazione squadra" autocomplete="off">
+    <input class="login-field" id="login-squad-password" type="password" placeholder="Codice di accesso" autocomplete="off">
+    <button class="login-button" onclick="submitLogin()">ACCEDI AL SISTEMA</button>
+    <div class="login-error" id="login-error-message"></div>
+    <div class="login-hint">
+      Accesso riservato al personale autorizzato.<br>
+      Ogni sessione è registrata e monitorata dagli organizzatori.<br>
+      Uso improprio è perseguibile ai sensi di legge.
+    </div>
+  </div>
+</div>
+
+<!-- MESSAGGIO ORGANIZZATORI -->
+<div id="admin-message">
+  <div class="admin-message-label">⬛ COMUNICAZIONE UFFICIALE — DIREZIONE K.A.R.I.</div>
+  <div class="admin-message-text" id="admin-message-text"></div>
+  <div class="admin-message-close" onclick="document.getElementById('admin-message').style.display='none'">[ CHIUDI COMUNICAZIONE ]</div>
+</div>
+
+<!-- OVERLAY SBLOCCO CLEARANCE -->
+<div id="clearance-overlay">
+  <div class="clearance-unlock-box">
+    <div class="unlock-badge">⬛ ACCESSO ELEVATO — K.A.R.I.</div>
+    <div class="unlock-caso">CASO 27/2026 — OPERAZIONE ANELLO</div>
+    <div class="unlock-title" id="unlock-level-label">—</div>
+    <div class="unlock-description">Nuove funzioni ora disponibili:</div>
+    <div id="unlock-features"></div>
+    <button class="unlock-close-button" onclick="document.getElementById('clearance-overlay').classList.remove('visible')">
+      ACCEDI AL NUOVO LIVELLO
+    </button>
+  </div>
+</div>
+
+<!-- SCHERMATA FINALE -->
+<div id="finale-screen">
+  <div class="finale-badge">K.A.R.I. — SISTEMA ARCHIVISTICO — CASO CHIUSO</div>
+  <div class="finale-caso">CASO 27/2026 — OPERAZIONE ANELLO</div>
+  <div class="finale-title">FASCICOLO RISOLTO</div>
+  <div class="finale-subject" id="finale-subject">CLASSIFICATO — CL.6</div>
+  <div id="finale-text"></div>
+  <div style="margin-top:32px">
+    <button class="action-button" onclick="document.getElementById('finale-screen').classList.remove('visible')">CHIUDI ARCHIVIO</button>
+  </div>
+</div>
+
+<!-- APP PRINCIPALE -->
+<div id="app">
+  <header id="header">
+    <div class="header-left">
+      <div class="header-brand">K.A.R.I.</div>
+      <div class="header-caso">CASO 27/2026</div>
+    </div>
+    <div class="header-right">
+      <span class="live-dot"></span>
+      <div class="header-clock" id="header-clock">--:--:--</div>
+      <div style="color:var(--color-text-muted)">|</div>
+      <div class="header-squad" id="header-squad-name">—</div>
+      <div style="color:var(--color-text-muted)">|</div>
+      <div class="header-cl">CL.<span id="header-clearance-number">1</span></div>
+    </div>
+  </header>
+
+  <nav id="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Archivio pubblico — CL.1</div>
+      <div class="nav-item active" data-panel="panel-anagrafe" onclick="switchPanel(this)">
+        <span class="nav-item-icon">◈</span>Anagrafe
+        <span class="nav-item-badge" id="badge-anagrafe">—</span>
+      </div>
+      <div class="nav-item" data-panel="panel-ricerca" onclick="switchPanel(this)">
+        <span class="nav-item-icon">◎</span>Ricerca globale
+      </div>
+      <div class="nav-item" data-panel="panel-mappa" onclick="switchPanel(this)">
+        <span class="nav-item-icon">⊕</span>Mappa operativa
+      </div>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Registro esteso — CL.2</div>
+      <div class="nav-item locked" data-panel="panel-veicoli" data-min-clearance="2" onclick="switchPanel(this)">
+        <span class="nav-item-icon">⬡</span>Registro veicoli<span class="nav-item-badge">—</span>
+      </div>
+      <div class="nav-item locked" data-panel="panel-tabulati" data-min-clearance="2" onclick="switchPanel(this)">
+        <span class="nav-item-icon">⬡</span>Tabulati telefonici
+      </div>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Analisi — CL.3</div>
+      <div class="nav-item locked" data-panel="panel-rete" data-min-clearance="3" onclick="switchPanel(this)">
+        <span class="nav-item-icon">⬡</span>Rete relazionale
+        <span class="nav-item-badge new" id="badge-rete" style="display:none">NEW</span>
+      </div>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Documenti — CL.4</div>
+      <div class="nav-item locked" data-panel="panel-documenti" data-min-clearance="4" onclick="switchPanel(this)">
+        <span class="nav-item-icon">⬡</span>Verbali e lettere
+        <span class="nav-item-badge alert" id="badge-documenti" style="display:none">!</span>
+      </div>
+      <div class="nav-item locked" data-panel="panel-audio" data-min-clearance="4" onclick="switchPanel(this)">
+        <span class="nav-item-icon">⬡</span>Audio-testimonianze
+      </div>
+      <div class="nav-item locked" data-panel="panel-foto" data-min-clearance="4" onclick="switchPanel(this)">
+        <span class="nav-item-icon">⬡</span>Archivio fotografico
+      </div>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Fascicolo riservato — CL.5</div>
+      <div class="nav-item locked" data-panel="panel-dossier" data-min-clearance="5" onclick="switchPanel(this)">
+        <span class="nav-item-icon">⬡</span>Dossier operazione
+      </div>
+      <div class="nav-item locked" data-panel="panel-cronologia" data-min-clearance="5" onclick="switchPanel(this)">
+        <span class="nav-item-icon">⬡</span>Cronologia eventi
+      </div>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Direzione — CL.6</div>
+      <div class="nav-item locked" data-panel="panel-direzione" data-min-clearance="6" onclick="switchPanel(this)">
+        <span class="nav-item-icon">⬡</span>Archivio direttore
+      </div>
+    </div>
+    <div id="clearance-progress">
+      <div class="clearance-progress-label">Clearance attiva</div>
+      <div id="clearance-steps-list"></div>
+    </div>
+  </nav>
+
+  <main id="main">
+    <!-- CL1: ANAGRAFE -->
+    <div class="panel active" id="panel-anagrafe">
+      <div class="page-category">Archivio anagrafico</div>
+      <div class="page-title">Registro comunale — San Demetrio Corone</div>
+      <div class="search-bar">
+        <input class="search-input" id="anagrafe-search" placeholder="Cerca cognome, nome, professione..." oninput="renderAnagrafe()">
+      </div>
+      <div class="filter-row" id="anagrafe-filters"></div>
+      <div id="anagrafe-table"></div>
+    </div>
+
+    <!-- CL1: RICERCA -->
+    <div class="panel" id="panel-ricerca">
+      <div class="page-category">Interrogazione sistema</div>
+      <div class="page-title">Ricerca globale K.A.R.I.</div>
+      <div class="search-bar">
+        <input class="search-input" id="global-search-input" placeholder="Termine di ricerca..." onkeydown="if(event.key==='Enter') eseguiRicercaGlobale()">
+        <button class="action-button primary" onclick="eseguiRicercaGlobale()">ESEGUI</button>
+      </div>
+      <div id="global-search-results">
+        <div class="info-box">Interroga l'archivio. Il sistema cerca nei record accessibili alla clearance attuale.</div>
+      </div>
+    </div>
+
+    <!-- CL1: MAPPA -->
+    <div class="panel" id="panel-mappa">
+      <div class="page-category">Mappa operativa</div>
+      <div class="page-title">San Demetrio Corone — Caso 27/2026</div>
+      <div class="info-box amber" style="margin-bottom:10px">
+        <span style="color:var(--color-green)">■</span> Luogo chiave &nbsp;
+        <span style="color:var(--color-amber)">■</span> Avvistamento / Indizio &nbsp;
+        <span style="color:var(--color-red)">■</span> Evento critico — Clicca i marker per i dettagli.
+      </div>
+      <div id="map-leaflet"></div>
+      <div id="map-detail" class="info-box" style="display:none; margin-top:10px;"></div>
+    </div>
+
+    <!-- CL2: VEICOLI -->
+    <div class="panel" id="panel-veicoli">
+      <div class="page-category">Registro veicoli</div>
+      <div class="page-title">Archivio targhe — Accesso CL.2</div>
+      <div class="filter-row" id="veicoli-filters">
+        <span class="filter-chip active" onclick="filterVeicoli(this,'tutti')">TUTTI</span>
+        <span class="filter-chip" onclick="filterVeicoli(this,'auto')">AUTOVETTURE</span>
+        <span class="filter-chip" onclick="filterVeicoli(this,'moto')">MOTOCICLI</span>
+        <span class="filter-chip" onclick="filterVeicoli(this,'furgone')">FURGONI</span>
+        <span class="filter-chip" onclick="filterVeicoli(this,'agricolo')">AGRICOLI</span>
+      </div>
+      <div id="veicoli-table"></div>
+    </div>
+
+    <!-- CL2: TABULATI -->
+    <div class="panel" id="panel-tabulati">
+      <div class="page-category">Tabulati telefonici</div>
+      <div class="page-title">Registro chiamate — Accesso CL.2</div>
+      <div id="tabulati-table"></div>
+    </div>
+
+    <!-- CL3: RETE -->
+    <div class="panel" id="panel-rete">
+      <div class="page-category">Analisi relazionale</div>
+      <div class="page-title">Rete connessioni — Caso 27/2026</div>
+      <div class="info-box amber">Clicca un nodo per espandere le connessioni del soggetto.</div>
+      <div id="graph-container"><svg id="graph-svg"></svg></div>
+      <div id="graph-detail">
+        <div id="graph-detail-name"></div>
+        <div id="graph-detail-connections"></div>
+      </div>
+    </div>
+
+    <!-- CL4: DOCUMENTI -->
+    <div class="panel" id="panel-documenti">
+      <div class="page-category">Verbali e lettere</div>
+      <div class="page-title">Documenti acquisiti — Accesso CL.4</div>
+      <div id="documenti-list"></div>
+    </div>
+
+    <!-- CL4: AUDIO -->
+    <div class="panel" id="panel-audio">
+      <div class="page-category">Audio-testimonianze</div>
+      <div class="page-title">Registrazioni archiviate — Accesso CL.4</div>
+      <div class="info-box">Premere ▶ per la riproduzione simulata.</div>
+      <div id="audio-list"></div>
+    </div>
+
+    <!-- CL4: FOTO -->
+    <div class="panel" id="panel-foto">
+      <div class="page-category">Archivio fotografico</div>
+      <div class="page-title">Immagini catalogate — Accesso CL.4</div>
+      <div class="filter-row">
+        <span class="filter-chip active" onclick="filterFoto(this,'tutte')">TUTTE</span>
+        <span class="filter-chip" onclick="filterFoto(this,'persone')">PERSONE</span>
+        <span class="filter-chip" onclick="filterFoto(this,'luoghi')">LUOGHI</span>
+        <span class="filter-chip" onclick="filterFoto(this,'oggetti')">OGGETTI</span>
+        <span class="filter-chip" onclick="filterFoto(this,'documenti')">DOCUMENTI</span>
+      </div>
+      <div id="foto-grid" class="card-grid"></div>
+    </div>
+
+    <!-- CL5: DOSSIER -->
+    <div class="panel" id="panel-dossier">
+      <div class="page-category">Dossier operazione — Riservato CL.5</div>
+      <div class="page-title">Caso 27/2026 — Operazione Anello</div>
+      <div class="info-box red">⚠ CLASSIFICATO CL.5 — Riproduzione vietata. Accesso registrato con timestamp.</div>
+      <div id="dossier-content"></div>
+    </div>
+
+    <!-- CL5: CRONOLOGIA -->
+    <div class="panel" id="panel-cronologia">
+      <div class="page-category">Cronologia eventi</div>
+      <div class="page-title">Ricostruzione — Caso 27/2026</div>
+      <div id="cronologia-list"></div>
+    </div>
+
+    <!-- CL6: DIREZIONE -->
+    <div class="panel" id="panel-direzione">
+      <div class="page-category">Archivio direzione — CL.6 MASSIMO</div>
+      <div class="page-title">Accesso direttore — Operazione Anello</div>
+      <div class="info-box red">⚠ CL.6 — Ogni operazione è registrata con identità operatore e timestamp.</div>
+      <div id="direzione-content"></div>
+    </div>
+  </main>
+
+  <footer id="footer">
+    <div id="footer-prompt">KARI://</div>
+    <input id="footer-input" type="text" placeholder="inserisci codice di clearance oppure digita 'help'" autocomplete="off" spellcheck="false" onkeydown="handleFooterCommand(event)">
+    <div id="footer-status">—</div>
+  </footer>
+</div>
+
+<script>
+/* ============================================================
+   STATO GLOBALE — il client è "stupido":
+   non conosce codici, trame o segreti.
+   Tutto arriva dal server via WebSocket.
+   ============================================================ */
+const CLEARANCE_LABELS = {
+  1: 'CL.1 — ACCESSO BASE',
+  2: 'CL.2 — OPERATORE',
+  3: 'CL.3 — ANALISTA',
+  4: 'CL.4 — ISPETTORE',
+  5: 'CL.5 — RESPONSABILE',
+  6: 'CL.6 — DIRETTORE',
+};
+const CLEARANCE_FEATURES = {
+  1: ['Anagrafe comunale (50+ soggetti)', 'Mappa operativa SDC', 'Ricerca globale archivio'],
+  2: ['Registro veicoli completo', 'Tabulati telefonici', 'Annotazioni investigative'],
+  3: ['Grafo relazionale interattivo', 'Schede dettaglio soggetti', 'Connessioni classificate'],
+  4: ['Verbali e corrispondenza originale', 'Audio-testimonianze (5)', 'Archivio fotografico'],
+  5: ['Dossier completo Caso 27/2026', 'Identità del soggetto scomparso', 'Cronologia ricostruita'],
+  6: ['Archivio segreto direzione', 'File classificati — Operazione Anello', 'Ricostruzione finale'],
+};
+
+// Dati ricevuti dal server — inizialmente vuoti
+let archivio = {
+  persone:    [],
+  veicoli:    [],
+  telefonate: [],
+  documenti:  [],
+  audio:      [],
+  dossier:    null,
+  timeline:   [],
+  finale_testo: null,
+  admin_flags: [],
+};
+
+// Luoghi mappa — pubblici, non classificati
+const LUOGHI_MAPPA = [
+  { id:'L001', nome:"Piazza F. Crispi / Torre dell'Orologio", lat:39.5691, lng:16.3603, tipo:'verde',  classificazione:'BASE OPERATIVA', descrizione:"Piazza principale. La torre dell'orologio, in disuso, è sede dell'Associazione Giovanile. Il Professore la frequentava ogni giovedì. Nessun avvistamento la sera del 12/07." },
+  { id:'L002', nome:"Collegio Sant'Adriano",                  lat:39.5699, lng:16.3618, tipo:'verde',  classificazione:'LUOGO CHIAVE',   descrizione:"Via Dante Alighieri 106. Il Professore vi ha insegnato 31 anni. Direzione presa la sera del 12/07. La segretaria Filomena Stranges ha ricevuto una sua chiamata quella sera." },
+  { id:'L003', nome:"Via Domenico Mauro — punto scomparsa",   lat:39.5683, lng:16.3590, tipo:'rosso',  classificazione:'CRITICO',        descrizione:"Sede Comune: n.82. Ultimo avvistamento certo. Veicolo ancora parcheggiato il 13/07 ore 07:00. Chiavi nell'auto. Nessuna telecamera attiva." },
+  { id:'L004', nome:"Studio notarile Scorpino",               lat:39.5677, lng:16.3583, tipo:'amber',  classificazione:'VERIFICATO',     descrizione:"Corso Skanderbeg. Studio Scorpino Raffaele. Alfa Romeo nelle vicinanze 22:10 del 12/07. Spiegazione: rientrava a casa. PISTA CHIUSA — ma vedi intercettazione T005." },
+  { id:'L005', nome:"Turre di Brunetti",                      lat:39.5641, lng:16.3682, tipo:'rosso',  classificazione:'NON VERIFICATO', descrizione:"Casolare abbandonato, contrada Brunetti. Furgone Pangallo segnalato qui notte 12/07 ~23:30. Fonte: Torchia Giovanni. Sopralluogo 15/07: nessuna traccia. PISTA APERTA." },
+  { id:'L006', nome:"Macchia Albanese",                       lat:39.5722, lng:16.3512, tipo:'verde',  classificazione:'INFO',           descrizione:"Frazione di San Demetrio Corone. Borgo albanofono. Nessun collegamento diretto al caso." },
+  { id:'L007', nome:"Sofferetti",                             lat:39.5620, lng:16.3648, tipo:'amber',  classificazione:'DA VERIFICARE',  descrizione:"Contrada rurale. Terreni Strigari nelle vicinanze. Operai agricoli riferiscono 'una luce' nella notte del 12/07. Non verificato." },
+  { id:'L008', nome:"Rione Marzile",                          lat:39.5708, lng:16.3628, tipo:'verde',  classificazione:'INFO',           descrizione:"Parte alta del paese. Piccola chiesa Madonna di Schiavonea. Zona tranquilla, nessuna rilevanza operativa diretta." },
+  { id:'L009', nome:"Piedigallo (contrada)",                  lat:39.5655, lng:16.3560, tipo:'amber',  classificazione:'DA VERIFICARE',  descrizione:"Contrada agricola a ovest. Mazzuca Pasquale vi risiede. Ha dichiarato di non aver visto nulla." },
+  { id:'L010', nome:"Mattarise (contrada)",                   lat:39.5630, lng:16.3672, tipo:'verde',  classificazione:'INFO',           descrizione:"Contrada olivicola. Carnevale Saverio coltiva qui. Zona marginale rispetto al caso." },
+  { id:'L011', nome:"Trappeto (zona)",                        lat:39.5665, lng:16.3540, tipo:'amber',  classificazione:'DA VERIFICARE',  descrizione:"Area agricola a nord-ovest. Auto di Veltri avvistata qui il 12/07 ore 19:00, tre ore prima della scomparsa. Veltri non ha spiegato. PISTA APERTA." },
+  { id:'L012', nome:"Casa Strigari",                          lat:39.5685, lng:16.3612, tipo:'verde',  classificazione:'DESTINAZIONE',   descrizione:"Residenza famiglia Strigari. Il Professore avrebbe dovuto consegnare qui l'Anello. Non è mai arrivato." },
+  { id:'L013', nome:"Bar Central — Piazza Crispi",            lat:39.5690, lng:16.3598, tipo:'verde',  classificazione:'INFO',           descrizione:"Bar frequentato dal Professore. Barista: Mazzuca Elia. Ha dichiarato di NON aver visto il Professore la sera del 12/07, contrariamente a una voce circolata." },
+];
+
+// Stato filtri e mappa
+let currentClearance   = 1;
+let wsConnection       = null;
+let pingIntervalId     = null;
+let leafletMap         = null;
+let activeAudioId      = null;
+let audioIntervals     = {};
+let filterAnagrafTag   = 'tutti';
+let filterVeicoliTag   = 'tutti';
+let filterFotoTag      = 'tutte';
+let connessioni_grafo  = []; // arriva dal server a CL3
+
+/* ============================================================
+   WEBSOCKET — connessione al server
+   ============================================================ */
+function connectWebSocket(onOpenCallback) {
+  const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
+  wsConnection   = new WebSocket(`${protocol}://${location.host}`);
+
+  wsConnection.onopen    = () => { if (onOpenCallback) onOpenCallback(); };
+  wsConnection.onmessage = (event) => handleServerMessage(JSON.parse(event.data));
+  wsConnection.onclose   = () => {
+    clearInterval(pingIntervalId);
+    showNotification('CONNESSIONE PERSA', 'Riconnessione in corso...', 'error');
+    setTimeout(() => connectWebSocket(), 3500);
+  };
+}
+
+function handleServerMessage(message) {
+  switch (message.type) {
+
+    case 'auth_ok':
+      document.getElementById('login-screen').style.display = 'none';
+      document.getElementById('header-squad-name').textContent = message.nome;
+      mergeArchivio(message.dati);
+      applyClearance(message.clearance, false);
+      startClock();
+      startPingInterval();
+      showNotification('ACCESSO CONCESSO', `Sistema K.A.R.I. — ${message.nome}`, 'system');
+      break;
+
+    case 'auth_err':
+      document.getElementById('login-error-message').textContent = '⚠ ' + message.messaggio;
+      break;
+
+    case 'clearance_ok':
+      mergeArchivio(message.nuovi_dati);
+      applyClearance(message.nuova_clearance, true);
+      break;
+
+    case 'clearance_err':
+      showNotification('CODICE NON VALIDO', message.messaggio, 'error');
+      break;
+
+    case 'clearance_warn':
+      showNotification('AVVISO', message.messaggio, 'warning');
+      break;
+
+    case 'codice_err':
+      showNotification('CODICE NON VALIDO', message.messaggio, 'error');
+      break;
+
+    case 'codice_warn':
+      showNotification('AVVISO', message.messaggio, 'warning');
+      break;
+
+    case 'clearance_forzata':
+      mergeArchivio(message.nuovi_dati);
+      applyClearance(message.clearance, message.clearance > currentClearance);
+      showNotification('SISTEMA', `Clearance aggiornata dalla Direzione → CL.${message.clearance}`, 'system');
+      break;
+
+    case 'messaggio_admin':
+      document.getElementById('admin-message-text').textContent = message.testo;
+      document.getElementById('admin-message').style.display = 'block';
+      showNotification('DIREZIONE K.A.R.I.', message.testo, 'warning');
+      break;
+
+    case 'pong':
+      break;
+  }
+}
+
+/* Integra i nuovi dati ricevuti dal server nell'archivio locale */
+function mergeArchivio(nuovi_dati) {
+  if (!nuovi_dati) return;
+  if (nuovi_dati.persone)     archivio.persone     = nuovi_dati.persone;
+  if (nuovi_dati.veicoli)     archivio.veicoli     = nuovi_dati.veicoli;
+  if (nuovi_dati.telefonate)  archivio.telefonate  = nuovi_dati.telefonate;
+  if (nuovi_dati.documenti)   archivio.documenti   = nuovi_dati.documenti;
+  if (nuovi_dati.audio)       archivio.audio       = nuovi_dati.audio;
+  if (nuovi_dati.dossier)     archivio.dossier     = nuovi_dati.dossier;
+  if (nuovi_dati.timeline)    archivio.timeline    = nuovi_dati.timeline;
+  if (nuovi_dati.finale_testo) archivio.finale_testo = nuovi_dati.finale_testo;
+  if (nuovi_dati.admin_flags) archivio.admin_flags = nuovi_dati.admin_flags;
+
+  // Le connessioni del grafo vengono generate lato client
+  // a partire dalle note dei soggetti a CL3+ (nessun dato sensibile)
+  if (currentClearance >= 3) buildConnessioni();
+}
+
+/* Costruisce le connessioni del grafo dai dati pubblici */
+function buildConnessioni() {
+  connessioni_grafo = [
+    { da:'P001', a:'P002', tipo:'Accordo consegna Anello', forza:'alta',  nota:'Appuntamento sera 12/07' },
+    { da:'P001', a:'P005', tipo:'Amicizia — 30 anni',      forza:'alta',  nota:'Ultima chiamata ore 20:55' },
+    { da:'P001', a:'P004', tipo:'Contatto telefonico',     forza:'media', nota:'2 chiamate — vedi tabulati' },
+    { da:'P001', a:'P003', tipo:'Conoscenza diretta',      forza:'bassa', nota:'Testimonianza 12/07' },
+    { da:'P001', a:'P035', tipo:'Contatto professionale',  forza:'media', nota:'Chiamata Collegio sera 12/07' },
+    { da:'P002', a:'P004', tipo:'Contatto telefonico',     forza:'media', nota:'Intercettazione T005 — PISTA' },
+    { da:'P002', a:'P006', tipo:'Rapporti storici',        forza:'alta',  nota:'Veltri + Strigari — T007' },
+    { da:'P002', a:'P016', tipo:'Familiare',               forza:'alta',  nota:'Rosaria = sorella' },
+    { da:'P003', a:'P017', tipo:'Coniugi',                 forza:'alta',  nota:'Pangallo M.G. + Bruno' },
+    { da:'P005', a:'P001', tipo:'Testimonianza chiave',    forza:'alta',  nota:'Ultimo avvistamento' },
+    { da:'P006', a:'P002', tipo:'Contatto sospetto',       forza:'media', nota:'T007 — 4 giorni prima' },
+  ];
+}
+
+/* ============================================================
+   LOGIN
+   ============================================================ */
+function submitLogin() {
+  const nome     = document.getElementById('login-squad-name').value.trim();
+  const password = document.getElementById('login-squad-password').value;
+  if (!nome || !password) {
+    document.getElementById('login-error-message').textContent = 'Inserisci denominazione e codice';
+    return;
+  }
+  document.getElementById('login-error-message').textContent = '';
+  connectWebSocket(() => {
+    wsConnection.send(JSON.stringify({
+      type: 'squadra_auth', nome, password,
+      userAgent: navigator.userAgent,
+    }));
+  });
+}
+document.getElementById('login-squad-password').addEventListener('keydown', e => { if (e.key === 'Enter') submitLogin(); });
+document.getElementById('login-squad-name').addEventListener('keydown',     e => { if (e.key === 'Enter') document.getElementById('login-squad-password').focus(); });
+
+function startPingInterval() {
+  pingIntervalId = setInterval(() => {
+    if (wsConnection?.readyState === WebSocket.OPEN) {
+      wsConnection.send(JSON.stringify({ type: 'ping' }));
+    }
+  }, 20000);
+}
+
+/* ============================================================
+   GESTIONE CLEARANCE
+   ============================================================ */
+function applyClearance(level, showSplash) {
+  const previousLevel = currentClearance;
+  currentClearance    = level;
+
+  document.getElementById('header-clearance-number').textContent = level;
+  document.getElementById('footer-status').textContent = `CL.${level} — SESSIONE ATTIVA`;
+
+  // Sblocca voci sidebar
+  document.querySelectorAll('.nav-item[data-min-clearance]').forEach(item => {
+    if (parseInt(item.getAttribute('data-min-clearance')) <= level) {
+      item.classList.remove('locked');
+    }
+  });
+
+  // Badge speciali
+  if (level >= 3) document.getElementById('badge-rete').style.display = 'inline';
+  if (level >= 4) document.getElementById('badge-documenti').style.display = 'inline';
+
+  renderAll();
+  renderClearanceProgress();
+
+  if (showSplash && level > previousLevel) showClearanceSplash(level);
+}
+
+function showClearanceSplash(level) {
+  document.getElementById('unlock-level-label').textContent = CLEARANCE_LABELS[level] || `CL.${level}`;
+  document.getElementById('unlock-features').innerHTML = (CLEARANCE_FEATURES[level] || []).map(f => `✦ ${f}`).join('<br>');
+  document.getElementById('clearance-overlay').classList.add('visible');
+}
+
+function renderClearanceProgress() {
+  document.getElementById('clearance-steps-list').innerHTML = Object.entries(CLEARANCE_LABELS).map(([level, label]) => {
+    const n = parseInt(level);
+    const cssClass = n < currentClearance ? 'completed' : n === currentClearance ? 'current' : '';
+    return `<div class="clearance-step ${cssClass}"><div class="clearance-step-dot"></div><span>${label}</span></div>`;
+  }).join('');
+}
+
+/* ============================================================
+   OROLOGIO
+   ============================================================ */
+function startClock() {
+  const updateClock = () => {
+    const now = new Date();
+    document.getElementById('header-clock').textContent =
+      [now.getHours(), now.getMinutes(), now.getSeconds()]
+        .map(v => String(v).padStart(2, '0')).join(':');
+  };
+  updateClock();
+  setInterval(updateClock, 1000);
+}
+
+/* ============================================================
+   NAVIGAZIONE PANNELLI
+   ============================================================ */
+function switchPanel(navItem) {
+  if (navItem.classList.contains('locked')) {
+    const requiredLevel = parseInt(navItem.getAttribute('data-min-clearance'));
+    showNotification('ACCESSO NEGATO', `Clearance ${requiredLevel} richiesta. Inserisci il codice nel campo KARI:// in basso.`, 'error');
+    document.getElementById('footer-input').focus();
+    return;
+  }
+  document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
+  navItem.classList.add('active');
+
+  const targetPanelId = navItem.getAttribute('data-panel');
+  document.querySelectorAll('.panel').forEach(panel => panel.classList.remove('active'));
+  document.getElementById(targetPanelId).classList.add('active');
+
+  if (targetPanelId === 'panel-rete')  renderGrafo();
+  if (targetPanelId === 'panel-mappa') renderMappa();
+}
+
+/* ============================================================
+   RENDER — aggiorna tutti i pannelli con i dati attuali
+   ============================================================ */
+function renderAll() {
+  renderFiltriAnagrafe();
+  renderAnagrafe();
+  if (currentClearance >= 2) { renderVeicoli(); renderTabulati(); }
+  if (currentClearance >= 4) { renderDocumenti(); renderAudio(); renderFoto(); }
+  if (currentClearance >= 5) { renderDossier(); renderCronologia(); }
+  if (currentClearance >= 6) { renderDirezione(); }
+}
+
+/* ── HELPER ── */
+const trovaPersona = id => archivio.persone.find(p => p.id === id) || null;
+const nomePersona  = id => {
+  const p = trovaPersona(id);
+  return p ? `${p.cognome} ${p.nome}` : id;
+};
+const tagClass = flag => ({ chiave:'key', testimone:'witness', sospetto:'suspect' }[flag] || '');
+
+/* ── ANAGRAFE ── */
+function renderFiltriAnagrafe() {
+  document.getElementById('anagrafe-filters').innerHTML = ['tutti','chiave','sospetto','testimone'].map(f =>
+    `<span class="filter-chip ${f==='tutti'?'active':''}" onclick="setFilterAnagrafe(this,'${f}')">${f.toUpperCase()}</span>`
+  ).join('');
+}
+function setFilterAnagrafe(chip, tag) {
+  filterAnagrafTag = tag;
+  document.querySelectorAll('#anagrafe-filters .filter-chip').forEach(c => c.classList.remove('active'));
+  chip.classList.add('active');
+  renderAnagrafe();
+}
+function renderAnagrafe() {
+  const query = (document.getElementById('anagrafe-search')?.value || '').toLowerCase();
+  const lista = archivio.persone.filter(p =>
+    `${p.cognome} ${p.nome} ${p.professione}`.toLowerCase().includes(query) &&
+    (filterAnagrafTag === 'tutti' || p.flag.includes(filterAnagrafTag))
+  );
+  document.getElementById('badge-anagrafe').textContent = archivio.persone.length || '—';
+
+  const showDetail = currentClearance >= 3;
+  let html = `<table class="data-table"><thead><tr>
+    <th>ID</th><th>Cognome</th><th>Nome</th><th>Nato</th><th>Residenza</th>
+    ${showDetail ? '<th>Professione</th>' : ''}
+    <th>Flag</th>
+    ${showDetail ? '<th>Nota K.A.R.I.</th>' : ''}
+  </tr></thead><tbody>`;
+
+  lista.forEach(p => {
+    const flagsHtml = p.flag.map(f =>
+      `<span class="cell-tag ${tagClass(f)}">${f.toUpperCase()}</span>`
+    ).join(' ');
+
+    html += `<tr class="${showDetail ? 'clickable' : ''}" ${showDetail ? `onclick="mostraDettaglioPersona('${p.id}')"` : ''}>
+      <td class="cell-id">${p.id}</td>
+      <td class="cell-name">${p.cognome}</td>
+      <td>${p.nome}</td>
+      <td>${p.nato}</td>
+      <td>${p.residenza}</td>
+      ${showDetail ? `<td>${p.professione}</td>` : ''}
+      <td>${flagsHtml || '—'}</td>
+      ${showDetail ? `<td style="font-size:9px;color:var(--color-text-secondary)">${p.nota || '—'}</td>` : ''}
+    </tr>`;
+  });
+  document.getElementById('anagrafe-table').innerHTML = html + '</tbody></table>';
+}
+function mostraDettaglioPersona(id) {
+  const p = trovaPersona(id);
+  if (!p) return;
+
+  const connessioni = connessioni_grafo.filter(c => c.da === id || c.a === id);
+  let connHtml = '';
+  if (connessioni.length) {
+    connHtml = `<div class="page-category" style="margin:14px 0 8px">Connessioni registrate</div>
+      <table class="data-table"><thead><tr><th>Soggetto</th><th>Tipo</th><th>Forza</th><th>Nota</th></tr></thead><tbody>`;
+    connessioni.forEach(c => {
+      const altroId = c.da === id ? c.a : c.da;
+      const colore  = c.forza === 'alta' ? 'var(--color-red)' : c.forza === 'media' ? 'var(--color-amber)' : 'var(--color-text-secondary)';
+      connHtml += `<tr><td>${nomePersona(altroId)}</td><td>${c.tipo}</td><td style="color:${colore}">${c.forza}</td><td style="font-size:9px;color:var(--color-text-secondary)">${c.nota}</td></tr>`;
+    });
+    connHtml += '</tbody></table>';
+  }
+
+  document.getElementById('panel-anagrafe').innerHTML = `
+    <div class="page-category">Scheda soggetto — K.A.R.I.</div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">
+      <div style="font-size:20px;font-family:var(--font-ui);font-weight:300;color:var(--color-text)">${p.cognome} ${p.nome}</div>
+      <button class="action-button" onclick="renderAll();renderFiltriAnagrafe()">← LISTA</button>
+    </div>
+    <div class="detail-grid">
+      <div class="detail-cell"><div class="detail-label">ID Archivio</div><div class="detail-value">${p.id}</div></div>
+      <div class="detail-cell"><div class="detail-label">Data nascita</div><div class="detail-value">${p.nato}</div></div>
+      <div class="detail-cell"><div class="detail-label">Luogo nascita</div><div class="detail-value">${p.luogo_nascita}</div></div>
+      <div class="detail-cell"><div class="detail-label">Residenza</div><div class="detail-value">${p.residenza}</div></div>
+      <div class="detail-cell"><div class="detail-label">Professione</div><div class="detail-value">${p.professione}</div></div>
+      <div class="detail-cell"><div class="detail-label">Alias noti</div><div class="detail-value">${p.alias || '—'}</div></div>
+    </div>
+    ${p.nota ? `<div class="info-box amber" style="font-size:11px">${p.nota}</div>` : ''}
+    ${connHtml}`;
+}
+
+/* ── MAPPA ── */
+function renderMappa() {
+  if (leafletMap) { setTimeout(() => leafletMap.invalidateSize(), 80); return; }
+  leafletMap = L.map('map-leaflet', { center: [39.5685, 16.3600], zoom: 14 });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxZoom: 18 }).addTo(leafletMap);
+
+  LUOGHI_MAPPA.forEach(luogo => {
+    const palette = { verde: { f:'#00e87a', b:'#008844' }, amber: { f:'#ffaa00', b:'#cc7700' }, rosso: { f:'#ff2244', b:'#cc0022' } };
+    const colori  = palette[luogo.tipo] || palette.verde;
+    const iconHtml = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="32" viewBox="0 0 24 32"><path d="M12 0C5.4 0 0 5.4 0 12C0 21 12 32 12 32C12 32 24 21 24 12C24 5.4 18.6 0 12 0Z" fill="${colori.f}" fill-opacity=".9" stroke="${colori.b}" stroke-width="1.5"/><circle cx="12" cy="12" r="4" fill="#000" fill-opacity=".3"/></svg>`;
+    const icon    = L.divIcon({ html: iconHtml, className: '', iconSize: [24,32], iconAnchor: [12,32], popupAnchor: [0,-34] });
+    const marker  = L.marker([luogo.lat, luogo.lng], { icon }).addTo(leafletMap);
+    marker.bindPopup(`
+      <div class="map-popup-id">${luogo.tipo.toUpperCase()} — ${luogo.id}</div>
+      <div class="map-popup-title">${luogo.nome}</div>
+      <div class="map-popup-cl">◈ ${luogo.classificazione}</div>
+      <div class="map-popup-desc">${luogo.descrizione}</div>
+    `, { maxWidth: 280, minWidth: 220 });
+    marker.on('click', () => {
+      const box = document.getElementById('map-detail');
+      box.style.display = 'block';
+      box.className = `info-box ${luogo.tipo === 'rosso' ? 'red' : luogo.tipo === 'amber' ? 'amber' : 'green'}`;
+      box.innerHTML = `<strong>[${luogo.classificazione}] ${luogo.nome}</strong><br><span style="font-size:9px">${luogo.id}</span><br><br>${luogo.descrizione}`;
+    });
+  });
+  setTimeout(() => leafletMap.invalidateSize(), 150);
+}
+
+/* ── VEICOLI ── */
+function filterVeicoli(chip, tag) {
+  filterVeicoliTag = tag;
+  document.querySelectorAll('#veicoli-filters .filter-chip').forEach(c => c.classList.remove('active'));
+  chip.classList.add('active');
+  renderVeicoli();
+}
+function renderVeicoli() {
+  const lista = archivio.veicoli.filter(v => filterVeicoliTag === 'tutti' || v.tipo === filterVeicoliTag);
+  let html = `<table class="data-table"><thead><tr>
+    <th>ID</th><th>Targa</th><th>Tipo</th><th>Marca/Modello</th><th>Anno</th><th>Intestatario</th>
+    ${currentClearance >= 3 ? '<th>Nota operativa</th>' : ''}
+  </tr></thead><tbody>`;
+  lista.forEach(v => {
+    const proprietario = trovaPersona(v.proprietario_id);
+    html += `<tr>
+      <td class="cell-id">${v.id}</td>
+      <td>${v.targa}</td>
+      <td><span class="cell-tag">${v.tipo.toUpperCase()}</span></td>
+      <td>${v.marca} ${v.modello} <span style="color:var(--color-text-muted)">(${v.colore})</span></td>
+      <td>${v.anno}</td>
+      <td>${proprietario ? proprietario.cognome + ' ' + proprietario.nome : v.proprietario_id}</td>
+      ${currentClearance >= 3 ? `<td style="font-size:9px;color:${v.nota ? 'var(--color-amber)' : 'var(--color-text-muted)'}">${v.nota || '—'}</td>` : ''}
+    </tr>`;
+  });
+  document.getElementById('veicoli-table').innerHTML = html + '</tbody></table>';
+}
+
+/* ── TABULATI ── */
+function renderTabulati() {
+  let html = `<table class="data-table"><thead><tr>
+    <th>ID</th><th>Data/Ora</th><th>Da</th><th>A</th><th>Durata</th>
+    ${currentClearance >= 3 ? '<th>Nota operativa</th>' : ''}
+  </tr></thead><tbody>`;
+  archivio.telefonate.forEach(t => {
+    html += `<tr style="${t.critica ? 'background:var(--color-red-dim)' : ''}">
+      <td class="cell-id">${t.id}</td>
+      <td style="${t.critica ? 'color:var(--color-red)' : ''}">${t.data}</td>
+      <td>${nomePersona(t.da_id)}</td>
+      <td>${nomePersona(t.a_id)}</td>
+      <td>${t.durata}</td>
+      ${currentClearance >= 3 ? `<td style="font-size:9px;color:${t.critica ? 'var(--color-red)' : t.nota.includes('CHIUSA') ? 'var(--color-text-muted)' : 'var(--color-amber)'}">${t.nota}</td>` : ''}
+    </tr>`;
+  });
+  document.getElementById('tabulati-table').innerHTML = html + '</tbody></table>';
+}
+
+/* ── GRAFO ── */
+function renderGrafo() {
+  const container = document.getElementById('graph-container');
+  const W = container.clientWidth || 700;
+  const H = 380;
+
+  const nodi = [
+    { id:'P001', x:W*0.5,  y:H*0.38, r:20, colore:'var(--color-red)',    etichetta:'[OMISSIS]',    sotto:'SOGGETTO CL.5' },
+    { id:'P002', x:W*0.72, y:H*0.22, r:15, colore:'var(--color-green)',   etichetta:'Strigari C.', sotto:'DESTINATARIO' },
+    { id:'P003', x:W*0.28, y:H*0.25, r:12, colore:'var(--color-amber)',   etichetta:'Pangallo M.', sotto:'TESTIMONE' },
+    { id:'P004', x:W*0.78, y:H*0.62, r:12, colore:'var(--color-amber)',   etichetta:'Scorpino R.', sotto:'(pista riaperta)' },
+    { id:'P005', x:W*0.22, y:H*0.62, r:13, colore:'var(--color-amber)',   etichetta:'Stranges R.', sotto:'TESTIMONE CHIAVE' },
+    { id:'P006', x:W*0.55, y:H*0.75, r:14, colore:'var(--color-red)',     etichetta:'Veltri C.',   sotto:'SOSPETTO' },
+    { id:'P016', x:W*0.88, y:H*0.42, r:10, colore:'var(--color-text-secondary)', etichetta:'Strigari R.', sotto:'FAMILIARE' },
+    { id:'P035', x:W*0.42, y:H*0.18, r:10, colore:'var(--color-amber)',   etichetta:'Stranges F.', sotto:'COLLEGAMENTO' },
+  ];
+
+  const linee = connessioni_grafo.map(c => {
+    const nA = nodi.find(n => n.id === c.da);
+    const nB = nodi.find(n => n.id === c.a);
+    if (!nA || !nB) return '';
+    const colore = c.forza === 'alta' ? '#ff2244' : c.forza === 'media' ? '#ffaa00' : '#1e3040';
+    const spessore = c.forza === 'alta' ? 2 : 1;
+    return `<line x1="${nA.x}" y1="${nA.y}" x2="${nB.x}" y2="${nB.y}" stroke="${colore}" stroke-width="${spessore}" opacity="0.7"/>`;
+  }).join('');
+
+  const cerchi = nodi.map(n => `
+    <g onclick="clickNodoGrafo('${n.id}')" style="cursor:pointer" transform="translate(${n.x},${n.y})">
+      <circle r="${n.r}" fill="${n.colore}" fill-opacity="0.12" stroke="${n.colore}" stroke-width="1.5"/>
+      <text class="graph-node-label" text-anchor="middle" y="3" fill="${n.colore}">${n.etichetta}</text>
+      <text class="graph-node-sublabel" text-anchor="middle" y="${n.r + 11}">${n.sotto}</text>
+    </g>`).join('');
+
+  document.getElementById('graph-svg').innerHTML = linee + cerchi;
+}
+
+function clickNodoGrafo(id) {
+  const p = trovaPersona(id);
+  if (!p) return;
+  const connessioni = connessioni_grafo.filter(c => c.da === id || c.a === id);
+  document.getElementById('graph-detail').style.display = 'block';
+  document.getElementById('graph-detail-name').textContent = `${p.cognome} ${p.nome} — ${p.professione}`;
+
+  let html = '';
+  if (connessioni.length) {
+    html = `<table class="data-table"><thead><tr><th>Collegato a</th><th>Tipo</th><th>Forza</th><th>Nota</th></tr></thead><tbody>`;
+    connessioni.forEach(c => {
+      const altroId = c.da === id ? c.a : c.da;
+      const colore  = c.forza === 'alta' ? 'var(--color-red)' : c.forza === 'media' ? 'var(--color-amber)' : 'var(--color-text-secondary)';
+      html += `<tr><td>${nomePersona(altroId)}</td><td>${c.tipo}</td><td style="color:${colore}">${c.forza}</td><td style="font-size:9px;color:var(--color-text-secondary)">${c.nota}</td></tr>`;
+    });
+    html += '</tbody></table>';
+  } else {
+    html = '<div style="color:var(--color-text-muted);font-size:10px">Nessuna connessione registrata.</div>';
+  }
+  document.getElementById('graph-detail-connections').innerHTML = html;
+}
+
+/* ── DOCUMENTI ── */
+function renderDocumenti() {
+  document.getElementById('documenti-list').innerHTML = archivio.documenti.map(d => `
+    <div class="document-paper">
+      <div class="document-classification ${d.classificazione.includes('TOP') ? 'top-secret' : ''}">${d.classificazione}</div>
+      <div class="document-header">
+        <div class="document-stamp">K.A.R.I. — Kernel Archivistico Ricerche Investigative — Caso 27/2026</div>
+        <div class="document-title">${d.titolo}</div>
+        <div class="document-meta">${d.tipo} — ${d.data} | ${d.id}</div>
+      </div>
+      <div class="document-body">${d.testo}</div>
+      <div class="document-signature">${d.firma}</div>
+      ${d.nota_archivio ? `<div class="document-archive-note">Nota archivio: ${d.nota_archivio}</div>` : ''}
+    </div>
+  `).join('');
+}
+
+/* ── AUDIO ── */
+function renderAudio() {
+  document.getElementById('audio-list').innerHTML = archivio.audio.map(a => `
+    <div class="audio-player-row" id="audio-player-${a.id}">
+      <div class="audio-play-button" onclick="toggleAudio('${a.id}')">▶</div>
+      <div class="audio-meta">
+        <div class="audio-title">${a.titolo}</div>
+        <div class="audio-duration">${a.data} — ${a.durata}</div>
+      </div>
+      <div class="audio-progress-track">
+        <div class="audio-progress-fill" id="audio-progress-${a.id}"></div>
+      </div>
+    </div>
+    <div style="background:var(--color-surface-raised);border:1px solid var(--color-border);border-top:none;padding:11px 13px;margin-bottom:14px">
+      <div style="font-size:7px;letter-spacing:2px;color:var(--color-text-muted);margin-bottom:5px">TRASCRIZIONE</div>
+      <div style="font-size:10px;color:var(--color-text-secondary);white-space:pre-wrap;line-height:1.8">${a.trascrizione}</div>
+    </div>
+  `).join('');
+}
+function toggleAudio(id) {
+  const progressBar = document.getElementById(`audio-progress-${id}`);
+  const playButton  = document.querySelector(`#audio-player-${id} .audio-play-button`);
+
+  if (activeAudioId === id) {
+    clearInterval(audioIntervals[id]);
+    activeAudioId = null;
+    playButton.textContent = '▶';
+    return;
+  }
+  if (activeAudioId) {
+    clearInterval(audioIntervals[activeAudioId]);
+    document.getElementById(`audio-progress-${activeAudioId}`).style.width = '0%';
+    const oldButton = document.querySelector(`#audio-player-${activeAudioId} .audio-play-button`);
+    if (oldButton) oldButton.textContent = '▶';
+  }
+
+  activeAudioId = id;
+  playButton.textContent = '⏸';
+
+  const track = archivio.audio.find(a => a.id === id);
+  const [mm, ss] = track.durata.split(':');
+  const totalSeconds = parseInt(mm) * 60 + parseInt(ss);
+  let progress = 0;
+
+  audioIntervals[id] = setInterval(() => {
+    progress += 100 / totalSeconds;
+    if (progress >= 100) {
+      progress = 100;
+      clearInterval(audioIntervals[id]);
+      playButton.textContent = '▶';
+      activeAudioId = null;
+    }
+    progressBar.style.width = progress + '%';
+  }, 1000);
+}
+
+/* ── FOTO ── */
+function filterFoto(chip, tag) {
+  filterFotoTag = tag;
+  document.querySelectorAll('#panel-foto .filter-chip').forEach(c => c.classList.remove('active'));
+  chip.classList.add('active');
+  renderFoto();
+}
+function renderFoto() {
+  // Le foto sono metadati pubblici — solo descrizioni, nessun segreto
+  const fotoMetadata = [
+    { id:'F001', cat:'persone',   desc:'[OMISSIS] — foto tessera 2023. Identità classificata CL.5.',       disponibile:true,  nota:'Accesso identità: CL.5 richiesta.' },
+    { id:'F002', cat:'luoghi',    desc:'Via Domenico Mauro — ripresa notturna ore 21:10 del 12/07.',        disponibile:true,  nota:'Fiat Punto V001 visibile sullo sfondo.' },
+    { id:'F003', cat:'oggetti',   desc:"Anello sigillare — lettera S gotica / corona / 'MEMENTO'.",         disponibile:true,  nota:'Unica immagine disponibile dell\'oggetto.' },
+    { id:'F004', cat:'persone',   desc:'Strigari Costantino — foto archivio comunale 2024.',                disponibile:true,  nota:'' },
+    { id:'F005', cat:'luoghi',    desc:"Torre dell'Orologio — Piazza Francesco Crispi.",                    disponibile:true,  nota:'' },
+    { id:'F006', cat:'luoghi',    desc:"Collegio Sant'Adriano — cortile interno.",                          disponibile:true,  nota:'Direzione presa dal soggetto la sera del 12/07.' },
+    { id:'F007', cat:'luoghi',    desc:'Turre di Brunetti — sopralluogo 15 luglio 2026.',                   disponibile:true,  nota:'Nessuna traccia rinvenuta. Accesso recente non escludibile.' },
+    { id:'F008', cat:'oggetti',   desc:'Borsa di tela — rinvenuta VUOTA nel veicolo V001.',                 disponibile:true,  nota:"L'Anello non era nell'auto. Era con il soggetto." },
+    { id:'F009', cat:'documenti', desc:'Appunto D005 — originale manoscritto.',                             disponibile:true,  nota:'"Cosa sa Veltri???" — unico riferimento scritto al nome Veltri.' },
+    { id:'F010', cat:'luoghi',    desc:'Zona Trappeto — avvistamento V007 ore 19:00 del 12/07.',            disponibile:true,  nota:'Veltri non ha spiegato la propria presenza.' },
+    { id:'F011', cat:'documenti', desc:'Telegramma 1943 — Strigari Filippo (D007).',                        disponibile:true,  nota:'"Sarà lui a trovarvi." — Chi era destinato a trovare l\'Anello?' },
+    { id:'F012', cat:'persone',   desc:'Veltri Carmelo — ex sindaco. Foto archivio 2019.',                  disponibile:true,  nota:'PISTA APERTA. Rapporti con Strigari non chiariti.' },
+    { id:'F013', cat:'oggetti',   desc:'Tabulato telefonico luglio 2026. [FILE PARZIALE]',                  disponibile:false, nota:'[FILE CORROTTO — recupero in corso]' },
+    { id:'F014', cat:'luoghi',    desc:'Casa Strigari — esterno. Destinazione finale del soggetto.',        disponibile:true,  nota:'Il soggetto non è mai arrivato.' },
+  ];
+
+  const lista = fotoMetadata.filter(f => filterFotoTag === 'tutte' || f.cat === filterFotoTag);
+  document.getElementById('foto-grid').innerHTML = lista.map(f => `
+    <div class="card">
+      <div class="card-label">${f.cat.toUpperCase()} — ${f.id}</div>
+      <div style="background:var(--color-border);height:90px;margin:6px 0;display:flex;align-items:center;justify-content:center;font-size:8px;letter-spacing:2px;color:var(--color-text-muted)">
+        ${f.disponibile ? '[ IMMAGINE ARCHIVIATA ]' : '⚠ FILE CORROTTO'}
+      </div>
+      <div style="font-size:10px;color:var(--color-text-secondary);line-height:1.5">${f.desc}</div>
+      ${f.nota ? `<div style="font-size:9px;color:var(--color-amber);margin-top:5px;border-top:1px solid var(--color-border);padding-top:4px">${f.nota}</div>` : ''}
+    </div>
+  `).join('');
+}
+
+/* ── DOSSIER (CL5) ── */
+function renderDossier() {
+  if (!archivio.dossier) return;
+  const d = archivio.dossier;
+  document.getElementById('dossier-content').innerHTML = `
+    <div class="info-box purple">⬛ Caso 27/2026 — Operazione Anello — Fascicolo principale</div>
+    <div class="detail-grid">
+      <div class="detail-cell"><div class="detail-label">Soggetto scomparso</div><div class="detail-value" style="color:var(--color-red)">${d.nome_completo}</div></div>
+      <div class="detail-cell"><div class="detail-label">Data nascita</div><div class="detail-value">${d.data_nascita} — ${d.luogo_nascita}</div></div>
+      <div class="detail-cell"><div class="detail-label">Professione</div><div class="detail-value">${d.professione}</div></div>
+      <div class="detail-cell"><div class="detail-label">Stato</div><div class="detail-value" style="color:var(--color-red)">${d.stato}</div></div>
+    </div>
+    <div class="info-box red"><strong>Sintesi operazione:</strong> ${d.sintesi}</div>
+    <div class="info-box amber"><strong>PISTE APERTE:</strong><br>${d.piste_aperte.replace(/\n/g, '<br>')}</div>
+    <div class="info-box"><strong>Piste chiuse:</strong><br>${d.piste_chiuse.replace(/\n/g, '<br>')}</div>
+    <div class="info-box green"><strong>ELEMENTO CRITICO — D009:</strong> ${d.elemento_critico}</div>`;
+}
+
+/* ── CRONOLOGIA (CL5) ── */
+function renderCronologia() {
+  document.getElementById('cronologia-list').innerHTML = archivio.timeline.map(e => `
+    <div class="timeline-entry">
+      <div class="timeline-date">${e.data}</div>
+      <div class="timeline-text">${e.testo.replace(/<hl>/g, '<span style="color:var(--color-amber)">').replace(/<\/hl>/g, '</span>').replace(/<hlr>/g, '<span style="color:var(--color-red)">').replace(/<\/hlr>/g, '</span>')}</div>
+    </div>
+  `).join('');
+}
+
+/* ── DIREZIONE (CL6) ── */
+function renderDirezione() {
+  const statistiche = `<div class="card-grid" style="margin-bottom:16px">
+    ${[
+      ['Soggetti', archivio.persone.length],
+      ['Veicoli',  archivio.veicoli.length],
+      ['Tabulati', archivio.telefonate.length],
+      ['Documenti',archivio.documenti.length],
+      ['Audio',    archivio.audio.length],
+      ['Luoghi',   LUOGHI_MAPPA.length],
+    ].map(([label, val]) => `
+      <div class="card">
+        <div class="card-label">${label}</div>
+        <div class="card-value">${val || 0}</div>
+      </div>`).join('')}
+  </div>`;
+
+  let flagsHtml = `<div class="page-category" style="margin-bottom:8px">Flag operativi — Direzione</div>
+    <table class="data-table"><thead><tr><th>ID</th><th>Soggetto</th><th>Flag</th><th>Priorità</th><th>Nota direzione</th></tr></thead><tbody>`;
+  (archivio.admin_flags || []).forEach(f => {
+    const colore = (f.priorita === 'CRITICA' || f.priorita === 'ALTA') ? 'var(--color-red)' : f.priorita === 'MEDIA' ? 'var(--color-amber)' : 'var(--color-text-secondary)';
+    flagsHtml += `<tr>
+      <td class="cell-id">${f.id}</td>
+      <td style="color:var(--color-text)">${f.soggetto}</td>
+      <td><span class="cell-tag suspect">${f.flag}</span></td>
+      <td style="color:${colore};font-size:9px">${f.priorita}</td>
+      <td style="font-size:9px;color:var(--color-text-secondary)">${f.nota}</td>
+    </tr>`;
+  });
+  flagsHtml += '</tbody></table>';
+
+  const pulsanteFinale = `
+    <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--color-border)">
+      <button class="action-button destructive" onclick="avviaFinale()">⬛ RICOSTRUZIONE FINALE — CHIUDI CASO 27/2026</button>
+    </div>`;
+
+  document.getElementById('direzione-content').innerHTML = statistiche + flagsHtml + pulsanteFinale;
+}
+
+/* ── RICERCA GLOBALE ── */
+function eseguiRicercaGlobale() {
+  const query = document.getElementById('global-search-input').value.toLowerCase().trim();
+  if (!query) return;
+
+  const risultati = [];
+  archivio.persone.forEach(p => {
+    if (`${p.cognome} ${p.nome} ${p.professione}`.toLowerCase().includes(query)) {
+      risultati.push({ tipo: 'PERSONA', id: p.id, descrizione: `${p.cognome} ${p.nome} — ${p.professione} — ${p.residenza}` });
+    }
+  });
+  if (currentClearance >= 2) {
+    archivio.veicoli.forEach(v => {
+      if ((v.targa + v.marca + v.modello).toLowerCase().includes(query)) {
+        risultati.push({ tipo: 'VEICOLO', id: v.id, descrizione: `${v.targa} — ${v.marca} ${v.modello}` });
+      }
+    });
+  }
+  if (currentClearance >= 4) {
+    archivio.documenti.forEach(d => {
+      if ((d.titolo + d.testo).toLowerCase().includes(query)) {
+        risultati.push({ tipo: 'DOCUMENTO', id: d.id, descrizione: d.titolo });
+      }
+    });
+  }
+  LUOGHI_MAPPA.forEach(l => {
+    if (l.nome.toLowerCase().includes(query)) {
+      risultati.push({ tipo: 'LUOGO', id: l.id, descrizione: l.nome });
+    }
+  });
+
+  if (!risultati.length) {
+    document.getElementById('global-search-results').innerHTML = `<div class="info-box">Nessun risultato per "<strong>${query}</strong>" alla clearance attuale.</div>`;
+    return;
+  }
+  let html = `<div class="info-box green">${risultati.length} risultato/i per "<strong>${query}</strong>"</div>
+    <table class="data-table"><thead><tr><th>Tipo</th><th>ID</th><th>Descrizione</th></tr></thead><tbody>`;
+  risultati.forEach(r => {
+    html += `<tr><td><span class="cell-tag">${r.tipo}</span></td><td class="cell-id">${r.id}</td><td>${r.descrizione}</td></tr>`;
+  });
+  document.getElementById('global-search-results').innerHTML = html + '</tbody></table>';
+}
+
+/* ── BARRA COMANDI FOOTER ── */
+function handleFooterCommand(event) {
+  if (event.key !== 'Enter') return;
+  const input = document.getElementById('footer-input');
+  const value = input.value.trim();
+  input.value = '';
+  if (!value) return;
+
+  const comando = value.toLowerCase();
+  const comandiLocali = {
+    'help':   () => showNotification('COMANDI K.A.R.I.', 'help · whoami · status · clear · finale (CL.6)', 'system'),
+    'whoami': () => showNotification('SESSIONE', `${document.getElementById('header-squad-name').textContent} — CL.${currentClearance}`, 'system'),
+    'status': () => showNotification('SISTEMA', `Persone:${archivio.persone.length} Veicoli:${archivio.veicoli.length} Documenti:${archivio.documenti.length}`, 'system'),
+    'clear':  () => document.getElementById('notification-bar').innerHTML = '',
+    'finale': () => { if (currentClearance >= 6) avviaFinale(); else showNotification('ACCESSO NEGATO', 'Clearance 6 richiesta', 'error'); },
+  };
+
+  if (comandiLocali[comando]) {
+    comandiLocali[comando]();
+    return;
+  }
+
+  // Tutto il resto è un potenziale codice di clearance — mandato al server
+  if (wsConnection?.readyState === WebSocket.OPEN) {
+    wsConnection.send(JSON.stringify({ type: 'codice', codice: value }));
+  } else {
+    showNotification('ERRORE', 'Connessione al server persa', 'error');
+  }
+}
+
+/* ── SCHERMATA FINALE ── */
+function avviaFinale() {
+  document.getElementById('finale-screen').classList.add('visible');
+  document.getElementById('finale-subject').textContent = 'VINCENZO BELLUSCI — CASO 27/2026';
+  const textElement = document.getElementById('finale-text');
+  textElement.innerHTML = '';
+
+  const testo = archivio.finale_testo || 'Archivio classificato. Accesso negato.';
+  let index = 0;
+  function typeCharacter() {
+    if (index < testo.length) {
+      textElement.innerHTML += testo[index] === '\n' ? '<br>' : testo[index];
+      index++;
+      setTimeout(typeCharacter, index < 20 ? 90 : 22);
+    }
+  }
+  setTimeout(typeCharacter, 700);
+}
+
+/* ── SISTEMA NOTIFICHE ── */
+function showNotification(titolo, messaggio, tipo = '') {
+  const bar = document.getElementById('notification-bar');
+  const div = document.createElement('div');
+  div.className = `notification ${tipo === 'error' ? 'error' : tipo === 'warning' ? 'warning' : tipo === 'system' ? 'system' : ''}`;
+  div.innerHTML = `<div class="notification-type">${titolo}</div>${messaggio}`;
+  bar.appendChild(div);
+  setTimeout(() => {
+    div.style.opacity    = '0';
+    div.style.transition = 'opacity 0.4s';
+    setTimeout(() => div.remove(), 400);
+  }, 5000);
+}
+
+/* ── NOTIFICHE AUTOMATICHE (sistema vivo) ── */
+const NOTIFICHE_AUTOMATICHE = [
+  { delay: 12000,  tipo: 'system',  titolo: 'SISTEMA K.A.R.I.',    testo: 'Sessione registrata. Monitoraggio attivo.' },
+  { delay: 40000,  tipo: 'error',   titolo: 'ACCESSO ANOMALO',     testo: 'Tentativo di bypass CL.5 rilevato — IP: 192.168.1.44. Bloccato.' },
+  { delay: 80000,  tipo: 'warning', titolo: 'AGGIORNAMENTO',       testo: 'Nuovo documento acquisito nel fascicolo 27/2026.' },
+  { delay: 140000, tipo: 'system',  titolo: 'SINCRONIZZAZIONE',    testo: 'Archivio K.A.R.I. aggiornato — 50 record verificati.' },
+  { delay: 210000, tipo: 'error',   titolo: 'ANOMALIA RILEVATA',   testo: 'Accesso simultaneo da dispositivo non registrato.' },
+  { delay: 300000, tipo: 'warning', titolo: 'DIREZIONE',           testo: 'Aggiornamento pista Veltri: verifica tabulati approvata.' },
+];
+window.addEventListener('load', () => {
+  NOTIFICHE_AUTOMATICHE.forEach(n => setTimeout(() => showNotification(n.titolo, n.testo, n.tipo), n.delay));
+});
+</script>
+</body>
+</html>
