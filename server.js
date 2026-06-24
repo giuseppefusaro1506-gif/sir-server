@@ -23,7 +23,7 @@ const fs           = require('fs');
    CONFIGURAZIONE — unico posto dove modificare segreti
    ============================================================ */
 const CONFIG = {
-  PORT:           3000,
+  PORT: process.env.PORT || 3000,
   SESSION_SECRET: 'kari-sdc-2026-segreto',
   DB_PATH:        path.join(__dirname, 'db', 'kari.db'),
   ADMIN_PASSWORD: 'direttore984',
